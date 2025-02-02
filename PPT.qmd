@@ -1,0 +1,259 @@
+---
+title: "Data Analysis on Volcano Eruptions and Environmental Impact"
+author: "`Jeongyeon Yun (Jennie)`"
+format: revealjs
+editor: visual
+---
+
+```{r setup, echo: false, message: false, warning: false, show_col_types = FALSE}
+#| echo: FALSE
+
+# Load relevant library
+library(dplyr) 
+library(tidyr)
+library(ggplot2) 
+library(ggpubr)
+library(readr)
+library(gridExtra)
+library(patchwork)
+
+# Load datasets 
+eruptions <- read_csv("tidytuesday:2020:2020-05-12:volcano/eruptions.csv", show_col_types = FALSE)
+env_impact <- read_csv("tidytuesday:2020:2020-05-12:volcano/tree_rings.csv", show_col_types = FALSE)
+
+```
+
+------------------------------------------------------------------------
+
+## Project Overview
+
+This project explores the relationship between volcanic eruptions, represented by the Volcanic Explosivity Index (VEI), and their environmental impact.
+
+The dataset is sourced from TidyTuesday.
+
+![VEI-Wikipedia](https://upload.wikimedia.org/wikipedia/commons/0/01/VEIfigure_en.svg)
+
+::: notes
+In this presentation, I'll show you how I used different visualization techniques to transformed the data and visualize the relationship between volcanic eruptions, described as their Volcanic Explosivity Index (VEI), and their environmental impacts. To provide context, I’ll briefly explain the dataset, but the main focus will be on the methods I used to effectively represent the data.
+:::
+
+------------------------------------------------------------------------
+
+## Data Overview
+
+The analysis uses the following datasets and key variables
+
+**Eruptions**
+
+Variables: Eruption year, location (latitude, longitude), VEI (scale: 0 to 8)
+
+**env_impact**
+
+Europe Temperature Index (°C, relative to 1961–1990 baseline) Tree ring z-scores (relative to 1000–1099)
+
+::: notes
+The dataset is sourced from TidyTuesday.
+:::
+
+------------------------------------------------------------------------
+
+## Dataset quality
+
+The dataset appears to be organized in a tidy format, which facilitates analysis. However, due to differences in observation periods and units across the datasets, some data preprocessing was necessary to ensure compatibility for time series
+
+------------------------------------------------------------------------
+
+## [Mapping: Spatial Distribution of volcano eruptions by VEI]{.r-fit-text}
+
+The map highlights regions with varying levels of volcanic intensity, with a color-gradient representing different VEI values
+
+```{r, echo=TRUE}
+#| code-fold: true
+
+# Creating a map to show the spatial distribution of volcano eruptions by VEI
+ggplot(data = eruptions %>% filter(!is.na(vei)), aes(x = longitude, y = latitude, color = vei)) +
+  borders("world", colour = "gray80", fill = "gray95") +  # Add a world map with gray borders and light background
+  geom_point(size = 2, alpha = 0.5) +  # Plot eruption points after creating the border
+  scale_color_gradient(low = "blue", high = "red") +  # Color scale: Blue for low VEI, red for high VEI
+  theme_minimal() +  # Minimalist theme for a clean look
+  labs(title = "Map of Volcano Eruptions with VEI Scale",  # Title of the plot
+       x = "Longitude",  # Label for the x-axis
+       y = "Latitude",  # Label for the y-axis
+       color = "VEI") +  # Label for the color scale
+  theme(plot.title = element_text(size = 30, face = "bold")) # Increase title size for better visibility
+```
+
+::: notes
+For the first visualization, I created a map to display the spatial distribution of volcanic eruptions based on their VEI values. A world map serves as the base layer, with eruption locations marked by color-coded points. This visualization was created using ggplot2 in R. I used the borders() to outline the world map and geom_point() function for the eruption points. A gradient color scale was applied to enhance the understanding of global volcanic activity patterns. Smaller eruptions are represented in blue, while larger eruptions appear in red, making it easy to interpret the global distribution of eruption sizes at a glance.
+:::
+
+------------------------------------------------------------------------
+
+## [Correlation: Tree ring z-score vs. Europe Temperature Index]{.r-fit-text}
+
+Visualize the relationship between the Tree ring z-scores and the Europe Temperature Index
+
+```{r, echo=TRUE}
+#| code-fold: true
+ggplot(env_impact, aes(x = n_tree, y = europe_temp_index)) + 
+  geom_point(size = 1, stroke = 0.8, color = "grey40") +  # Create scatter plot with data points, stroke to 0.8 (border thickness)
+  geom_smooth(method = "lm", color = "red") + 
+  stat_cor(aes(label = ..r.label..), method = "pearson", color = "black", size = 7) + # Add Pearson correlation coefficient on the plot
+  ggtitle("Correlation Between Tree Ring Z-Scores and Europe Temperature Index") +
+  theme_minimal() +
+  xlab("Tree Ring Z-Scores") +
+  ylab("Europe Temperature Index")+
+  theme(
+    plot.title = element_text(size = 30, face = "bold")  # Increase title size
+  )
+```
+
+::: notes
+To examine whether tree ring z-scores and the Europe Temperature Index exhibit similar trends and results in the same year as volcanic activity, I created a correlation graph. This visualization helps assess the immediate environmental impacts of volcanic eruptions. Using geom_point() in R, I plotted individual data points to show the relationship between the two variables. A trend line was added with geom_smooth() to highlight the overall pattern. Additionally, I included the Pearson correlation coefficient using stat_cor() to provide a quantitative measure of the relationship. This approach offers both a clear visual representation and a statistical summary to support the analysis.
+:::
+
+------------------------------------------------------------------------
+
+## Multiplots: Comparing the Impact of VEI on Europe Temperature Over Time {.r-fit-text}
+
+Visualize the data in two separate plots to investigate how volcanic eruptions categorized by their Volcanic Explosivity Index (VEI), impact the Europe Temperature Index (ETI) in the same year
+
+::: notes
+For the final visualizations, I compared the effects of VEI categories on the Europe Temperature Index over time, using two complementary plots.
+:::
+
+------------------------------------------------------------------------
+
+```{r}
+# Merge env_impact data with eruption data
+env_impact_vei <- inner_join(env_impact, eruptions, by = c("year" = "start_year"))
+
+# Categorize VEI into levels (1-2, 3-4, >=5)
+env_impact_vei <- env_impact_vei %>%
+  mutate(vei_category = case_when(
+    vei >= 5 ~ "VEI >= 5",  # Large eruptions
+    vei >= 3 ~ "VEI 3-4",    # Moderate eruptions
+    vei >= 1 ~ "VEI 1-2",    # Small eruptions
+    TRUE ~ NA_character_    
+  ))
+
+# Calculate average Europe Temperature Index for each VEI category
+vei_temp_index <- env_impact_vei %>%
+  filter(!is.na(vei_category)) %>%  # Remove rows with missing VEI category
+  group_by(vei_category) %>%  # Group data by VEI category
+  summarise(avg_temp_index = mean(europe_temp_index, na.rm = TRUE)) %>%  # Calculate mean ETI for each category
+  mutate(vei_category = factor(vei_category, levels = c("VEI 1-2", "VEI 3-4", "VEI >= 5")))  # Reorder the category
+
+# Plot 1: VEI Category vs Average Europe Temperature Index
+plot1 <- ggplot(vei_temp_index, aes(x = vei_category, y = avg_temp_index, fill = vei_category)) +
+  geom_bar(stat = "identity") +  # Create bar chart with heights based on avg_temp_index
+  geom_text(aes(label = round(avg_temp_index, 2)), vjust = -0.5) +  # Add text labels showing the rounded average ETI values
+  labs(x = "VEI Category", y = "Average ETI") +  
+  theme_minimal()
+
+# Plot 2: VEI Intensity and Europe Temperature Index Over Time
+
+# Calculate VEI intensity by year
+vei_intensity <- env_impact_vei %>%
+  group_by(year, vei_category) %>%  # Group data by year and VEI category
+  summarise(vei_count = n()) %>%  # Count the number of eruptions per each category
+  mutate(vei_intensity_value = case_when(  # Assign scaled intensity values based on VEI category
+    vei_category == "VEI >= 5" ~ vei_count * 10000,  # Large eruptions have a high intensity
+    vei_category == "VEI 3-4" ~ vei_count * 100,     # Moderate eruptions
+    vei_category == "VEI 1-2" ~ vei_count * 1,       # Small eruptions
+    TRUE ~ 0
+  ))
+
+# Total VEI intensity per year
+vei_intensity_total <- vei_intensity %>%
+  group_by(year) %>%
+  summarise(total_intensity = sum(vei_intensity_value))  # Sum total intensity by year
+
+# Join VEI intensity data with Europe Temperature Index data
+vei_temp_joined <- left_join(vei_intensity_total, env_impact_vei, by = "year")  # Merge data
+
+# Plot 2: Combine bar chart (VEI intensity) and line chart (Temperature Index)
+plot2 <- ggplot(vei_temp_joined, aes(x = year)) +
+  geom_bar(aes(y = total_intensity, fill = "VEI Intensity"), stat = "identity", alpha = 0.9, linewidth = 10) +  # Bar chart for VEI intensity
+  geom_line(aes(y = europe_temp_index * 100000, color = "Europe Temperature Index"), size = 1) +  # Line chart for temperature index
+  scale_y_continuous(
+    name = "VEI Intensity",  # Primary axis label for calculated VEI intensity values
+    sec.axis = sec_axis(~ . / 100000, name = "Europe Temperature Index (°C)")  # Secondary axis for temperature
+  ) +
+  scale_fill_manual(values = c("VEI Intensity" = "blue")) +  
+  scale_color_manual(values = c("Europe Temperature Index" = "red")) +  
+  labs(x = "Year") + 
+  theme_minimal() 
+ 
+
+
+# Combine the plots with adjusted spacing
+plot1 + plot2 +  # Combine plot1 and plot2
+  plot_annotation(tag_levels = 'a',  # Use 'a' for labeling plot tags
+                title = "VEI intensity effect on Europe temperature",  
+                subtitle = "a: Average ETI by VEI category b: VEI and ETI over time") + 
+  plot_layout(widths = c(3, 11)) +  # Adjust the relative widths of plot1 and plot2
+  theme(
+    legend.position = "top",  
+    legend.title = element_text(size = 10), 
+    legend.text = element_text(size = 10),  
+    legend.key.size = unit(0.2, 'cm'))
+
+```
+
+::: notes
+First plot: I grouped eruptions by VEI category, calculated the average Europe Temperature Index for each group, and displayed this data in a bar chart. To enhance clarity, I added text labels showing the exact averages on top of each bar. Second plot: I combined VEI intensity over time and the Europe Temperature Index into a dual-axis plot. The bar chart represents VEI intensity, while the line chart overlays temperature changes. This method allows for a more dynamic comparison of eruption intensity and temperature variations in a single visualization. Both plots were carefully designed using ggplot2 to ensure they conveyed the data story effectively and clearly.
+:::
+
+------------------------------------------------------------------------
+
+```{r, echo=TRUE, eval=FALSE}
+# Show the code in the slide
+plot1 + plot2 +  # Combine plot1 and plot2
+  plot_annotation(tag_levels = 'a',  # Use 'a' for labeling plot tags
+                title = "VEI intensity effect on Europe temperature",  
+                subtitle = "a: Average ETI by VEI category b: VEI and ETI over time") + 
+  plot_layout(widths = c(3, 11)) +  # Adjust the relative widths of plot1 and plot2
+  theme(
+    legend.position = "top",  
+    legend.title = element_text(size = 10), 
+    legend.text = element_text(size = 10),  
+    legend.key.size = unit(0.2, 'cm'))
+```
+
+------------------------------------------------------------------------
+
+```{r, echo=TRUE}
+
+# Plot 2: VEI Intensity and Europe Temperature Index Over Time
+# Calculate VEI intensity by year
+vei_intensity <- env_impact_vei %>%
+  group_by(year, vei_category) %>%  # Group data by year and VEI category
+  summarise(vei_count = n()) %>%  # Count the number of eruptions per each category
+  mutate(vei_intensity_value = case_when(  # Assign scaled intensity values based on VEI category
+    vei_category == "VEI >= 5" ~ vei_count * 10000,  # Large eruptions have a high intensity
+    vei_category == "VEI 3-4" ~ vei_count * 100,     # Moderate eruptions
+    vei_category == "VEI 1-2" ~ vei_count * 1,       # Small eruptions
+    TRUE ~ 0
+  ))
+```
+
+------------------------------------------------------------------------
+
+## Reflection
+
+### Lessons Learned
+
+1.  Despite basic knowledge of R, creating publication-quality plots was challenging due to limited resources for reference
+2.  Learned tidy data techniques, R functions, and tools like Quarto and GitHub for better project management and visualization
+
+### Challenges Faced
+
+1.  Color Choices and Accessibility: Overlooked accessibility for colorblind users, leading to the overuse of red and green
+2.  Data Preparation: Faced difficulties in transforming or merging datasets to make them suitable for visualization
+
+------------------------------------------------------------------------
+
+# Thank you! Questions?
+
+------------------------------------------------------------------------
